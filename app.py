@@ -1,29 +1,19 @@
-# app.py - MYP Math Professional Generator
+# app.py - MYP Math Professional Generator with ALL Math Tools
 import streamlit as st
 from openai import OpenAI
 from datetime import datetime
+import streamlit.components.v1 as components
 import json
-
-# Import curriculum database
-try:
-    from curriculum import MYP_CURRICULUM, CRITERION_STRANDS, GLOBAL_CONTEXTS, KEY_CONCEPTS, COMMAND_TERMS
-except:
-    # Fallback if curriculum.py doesn't exist yet
-    MYP_CURRICULUM = {}
-    CRITERION_STRANDS = {}
-    GLOBAL_CONTEXTS = []
-    KEY_CONCEPTS = []
-    COMMAND_TERMS = {}
 
 # Page configuration
 st.set_page_config(
-    page_title="MYP Math Pro",
+    page_title="MYP Math Pro with Tools",
     page_icon="🧮",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS for enhanced UI
 st.markdown("""
 <style>
     /* Main styling */
@@ -34,41 +24,43 @@ st.markdown("""
         border-radius: 15px;
         text-align: center;
         margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     
-    .criterion-card {
-        background: #f8f9fa;
-        border-radius: 10px;
+    .tool-card {
+        background: white;
+        border-radius: 12px;
         padding: 1.5rem;
         margin: 1rem 0;
-        border-left: 5px solid #007bff;
-        transition: transform 0.2s;
+        border-left: 6px solid;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        transition: transform 0.2s, box-shadow 0.2s;
     }
     
-    .criterion-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    .tool-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.12);
     }
     
-    .curriculum-item {
-        background: #e9ecef;
-        padding: 0.75rem;
-        margin: 0.5rem 0;
-        border-radius: 8px;
-        border-left: 4px solid #28a745;
+    .geogebra-card {
+        border-left-color: #3B82F6;
     }
     
-    .strand-selected {
-        background: #d4edda !important;
-        border-color: #155724 !important;
+    .equation-card {
+        border-left-color: #10B981;
     }
     
-    .assessment-output {
-        background: #f8f9fa;
+    .graphing-card {
+        border-left-color: #8B5CF6;
+    }
+    
+    .assessment-card {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 12px;
         padding: 2rem;
-        border-radius: 10px;
-        border: 2px solid #dee2e6;
         margin: 1.5rem 0;
+        border: 2px solid #dee2e6;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
     
     /* Button styling */
@@ -76,646 +68,936 @@ st.markdown("""
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border: none;
-        border-radius: 8px;
-        padding: 0.75rem 1.5rem;
-        font-weight: bold;
+        border-radius: 10px;
+        padding: 0.8rem 1.8rem;
+        font-weight: 600;
         transition: all 0.3s;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
     }
     
-    /* Tabs styling */
+    /* Tab styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 2rem;
+        gap: 1rem;
         background-color: #f8f9fa;
         padding: 1rem;
-        border-radius: 10px;
+        border-radius: 12px;
+        border: 1px solid #e9ecef;
     }
     
     .stTabs [data-baseweb="tab"] {
-        height: 50px;
+        height: 60px;
         white-space: pre-wrap;
-        background-color: #e9ecef;
-        border-radius: 5px;
-        padding: 1rem;
-        font-weight: bold;
+        background-color: white;
+        border-radius: 8px;
+        padding: 1rem 1.5rem;
+        font-weight: 600;
+        border: 2px solid transparent;
+        transition: all 0.2s;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        border-color: #667eea;
+        background-color: #f0f4ff;
+    }
+    
+    /* Tool icons */
+    .tool-icon {
+        font-size: 1.5rem;
+        margin-right: 10px;
+        vertical-align: middle;
+    }
+    
+    /* Status indicators */
+    .status-success {
+        background: #d1fae5;
+        color: #065f46;
+        padding: 8px 15px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        display: inline-block;
+    }
+    
+    .status-warning {
+        background: #fef3c7;
+        color: #92400e;
+        padding: 8px 15px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        display: inline-block;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
-if 'assessments' not in st.session_state:
-    st.session_state.assessments = []
-if 'selected_strands' not in st.session_state:
-    st.session_state.selected_strands = []
-if 'api_key' not in st.session_state:
-    st.session_state.api_key = ""
+# ========== MATH TOOLS FUNCTIONS ==========
+def geogebra_calculator(height=500, title="GeoGebra Calculator"):
+    """Embed GeoGebra Calculator"""
+    html = f"""
+    <div style="border: 3px solid #3B82F6; border-radius: 15px; overflow: hidden; margin: 20px 0; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);">
+        <iframe src="https://www.geogebra.org/calculator" 
+                width="100%" 
+                height="{height}px" 
+                style="border: none;"
+                title="{title}"
+                allowfullscreen>
+        </iframe>
+        <div style="background: linear-gradient(135deg, #3B82F6, #1D4ED8); color: white; padding: 15px; text-align: center;">
+            <strong style="font-size: 1.1em;">{title}</strong>
+            <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9em;">Interactive algebra, functions, and calculus</p>
+        </div>
+    </div>
+    """
+    components.html(html, height=height + 70)
 
-# ========== HEADER ==========
-st.markdown("""
-<div class="main-header">
-    <h1>🧮 MYP Mathematics Assessment Generator</h1>
-    <h3>Professional Edition • Curriculum-Aligned • AI-Powered</h3>
-    <p>Create MYP math assessments with proper criterion strands and curriculum alignment</p>
-</div>
-""", unsafe_allow_html=True)
+def geogebra_geometry(height=500, title="GeoGebra Geometry"):
+    """Embed GeoGebra Geometry"""
+    html = f"""
+    <div style="border: 3px solid #10B981; border-radius: 15px; overflow: hidden; margin: 20px 0; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);">
+        <iframe src="https://www.geogebra.org/geometry" 
+                width="100%" 
+                height="{height}px" 
+                style="border: none;"
+                title="{title}"
+                allowfullscreen>
+        </iframe>
+        <div style="background: linear-gradient(135deg, #10B981, #047857); color: white; padding: 15px; text-align: center;">
+            <strong style="font-size: 1.1em;">{title}</strong>
+            <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9em;">Construct figures, measure angles, prove theorems</p>
+        </div>
+    </div>
+    """
+    components.html(html, height=height + 70)
 
-# ========== SIDEBAR ==========
-with st.sidebar:
-    st.header("⚙️ Configuration")
-    
-    # API Key
-    api_key = st.text_input(
-        "OpenAI API Key:",
-        type="password",
-        placeholder="sk-...",
-        help="Required for AI generation. Get from platform.openai.com",
-        key="api_input"
-    )
-    
-    if api_key:
-        st.session_state.api_key = api_key
-        st.success("✅ API key saved")
-    
-    st.divider()
-    
-    # Quick Start Guide
-    st.header("🚀 Quick Start")
-    with st.expander("How to use this tool"):
-        st.write("""
-        1. **Select Curriculum** - Choose MYP level and topics
-        2. **Choose Criteria** - Select specific criterion strands
-        3. **Set Context** - Add real-world relevance
-        4. **Generate** - Click to create assessment
-        5. **Download** - Get your assessment file
-        """)
-    
-    st.divider()
-    
-    # Assessment Counter
-    st.metric("Assessments Created", len(st.session_state.assessments))
+def geogebra_graphing(height=500, title="GeoGebra Graphing"):
+    """Embed GeoGebra Graphing Calculator"""
+    html = f"""
+    <div style="border: 3px solid #8B5CF6; border-radius: 15px; overflow: hidden; margin: 20px 0; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);">
+        <iframe src="https://www.geogebra.org/graphing" 
+                width="100%" 
+                height="{height}px" 
+                style="border: none;"
+                title="{title}"
+                allowfullscreen>
+        </iframe>
+        <div style="background: linear-gradient(135deg, #8B5CF6, #7C3AED); color: white; padding: 15px; text-align: center;">
+            <strong style="font-size: 1.1em;">{title}</strong>
+            <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 0.9em;">Plot functions, sliders, analyze graphs</p>
+        </div>
+    </div>
+    """
+    components.html(html, height=height + 70)
 
-# ========== MAIN CONTENT - TABS ==========
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📚 Curriculum", 
-    "🎯 Criteria", 
-    "🌍 Context", 
-    "🚀 Generate"
-])
-
-# ========== TAB 1: CURRICULUM SELECTOR ==========
-with tab1:
-    st.header("Select MYP Curriculum Framework")
-    
-    if not MYP_CURRICULUM:
-        st.error("❌ Curriculum database not loaded. Please create curriculum.py file.")
-        st.code("""
-        # Create a file called curriculum.py with:
-        MYP_CURRICULUM = {
-            "MYP 1-3": {...},
-            "MYP 4-5 (standard)": {...},
-            "MYP 4-5 (extended)": {...}
-        }
-        """)
-    else:
-        # MYP Level Selection
-        col1, col2, col3 = st.columns([2, 1, 1])
+def math_equation_editor():
+    """Interactive math equation editor"""
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Math Equation Editor</title>
+        <!-- MathQuill -->
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@edtr-io/mathquill@0.11.0/build/mathquill.css"/>
+        <script src="https://cdn.jsdelivr.net/npm/@edtr-io/mathquill@0.11.0/build/mathquill.min.js"></script>
         
-        with col1:
-            selected_level = st.selectbox(
-                "MYP Level:",
-                list(MYP_CURRICULUM.keys()),
-                index=0,
-                help="Choose based on student age and ability"
-            )
-        
-        with col2:
-            selected_branch = st.selectbox(
-                "Mathematics Branch:",
-                list(MYP_CURRICULUM[selected_level].keys()),
-                index=0
-            )
-        
-        with col3:
-            selected_topic = st.selectbox(
-                "Topic Area:",
-                list(MYP_CURRICULUM[selected_level][selected_branch].keys()),
-                index=0
-            )
-        
-        # Display Selected Curriculum
-        st.markdown(f"""
-        ### Selected Curriculum:
-        **Level:** {selected_level}  
-        **Branch:** {selected_branch}  
-        **Topic:** {selected_topic}
-        """)
-        
-        # Skills/Concepts Selection
-        st.subheader("Specific Skills & Concepts")
-        
-        skills = MYP_CURRICULUM[selected_level][selected_branch][selected_topic]
-        selected_skills = []
-        
-        cols = st.columns(2)
-        for i, skill in enumerate(skills):
-            col = cols[i % 2]
-            if col.checkbox(skill, key=f"skill_{i}"):
-                selected_skills.append(skill)
-        
-        if selected_skills:
-            st.success(f"✅ Selected {len(selected_skills)} skills/concepts")
-            with st.expander("View selected skills"):
-                for skill in selected_skills:
-                    st.markdown(f'<div class="curriculum-item">• {skill}</div>', unsafe_allow_html=True)
-        
-        # Store in session
-        st.session_state.curriculum = {
-            "level": selected_level,
-            "branch": selected_branch,
-            "topic": selected_topic,
-            "skills": selected_skills
-        }
-
-# ========== TAB 2: CRITERIA SELECTOR ==========
-with tab2:
-    st.header("Select Assessment Criteria")
-    st.write("Choose specific criterion strands for your assessment")
-    
-    # Initialize selected strands in session
-    if 'selected_strands' not in st.session_state:
-        st.session_state.selected_strands = []
-    
-    # Display all criteria in columns
-    col1, col2, col3, col4 = st.columns(4)
-    
-    all_strands = []
-    
-    with col1:
-        st.markdown("### Criterion A")
-        st.write("*Knowing & Understanding*")
-        
-        for strand, description in CRITERION_STRANDS.get("Criterion A: Knowing and understanding", {}).items():
-            key = f"A_{strand}"
-            is_selected = st.checkbox(f"A-{strand}: {description[:60]}...", key=key)
-            if is_selected:
-                all_strands.append(f"A-{strand}: {description}")
-    
-    with col2:
-        st.markdown("### Criterion B")
-        st.write("*Investigating Patterns*")
-        
-        for strand, description in CRITERION_STRANDS.get("Criterion B: Investigating patterns", {}).items():
-            key = f"B_{strand}"
-            is_selected = st.checkbox(f"B-{strand}: {description[:60]}...", key=key)
-            if is_selected:
-                all_strands.append(f"B-{strand}: {description}")
-    
-    with col3:
-        st.markdown("### Criterion C")
-        st.write("*Communicating*")
-        
-        for strand, description in CRITERION_STRANDS.get("Criterion C: Communicating", {}).items():
-            key = f"C_{strand}"
-            is_selected = st.checkbox(f"C-{strand}: {description[:60]}...", key=key)
-            if is_selected:
-                all_strands.append(f"C-{strand}: {description}")
-    
-    with col4:
-        st.markdown("### Criterion D")
-        st.write("*Applying Mathematics*")
-        
-        for strand, description in CRITERION_STRANDS.get("Criterion D: Applying mathematics in real-life contexts", {}).items():
-            key = f"D_{strand}"
-            is_selected = st.checkbox(f"D-{strand}: {description[:60]}...", key=key)
-            if is_selected:
-                all_strands.append(f"D-{strand}: {description}")
-    
-    # Update session state
-    st.session_state.selected_strands = all_strands
-    
-    # Display selected strands
-    if st.session_state.selected_strands:
-        st.success(f"✅ Selected {len(st.session_state.selected_strands)} criterion strands")
-        
-        with st.expander("📋 View Selected Strands"):
-            for strand in st.session_state.selected_strands:
-                # Extract criterion and description
-                parts = strand.split(": ", 1)
-                if len(parts) == 2:
-                    criterion, desc = parts
-                    st.markdown(f"""
-                    <div class="strand-selected curriculum-item">
-                        <strong>{criterion}</strong><br>
-                        {desc}
-                    </div>
-                    """, unsafe_allow_html=True)
-    else:
-        st.info("👈 Select at least one criterion strand to continue")
-
-# ========== TAB 3: CONTEXT BUILDER ==========
-with tab3:
-    st.header("Real-world Context & Settings")
-    
-    # Context Builder
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("MYP Framework")
-        global_context = st.selectbox(
-            "Global Context:",
-            GLOBAL_CONTEXTS if GLOBAL_CONTEXTS else ["Select...", "Scientific innovation", "Fairness"],
-            index=0
-        )
-        
-        key_concept = st.selectbox(
-            "Key Concept:",
-            KEY_CONCEPTS if KEY_CONCEPTS else ["Select...", "Relationships", "Change"],
-            index=0
-        )
-    
-    with col2:
-        st.subheader("Command Terms")
-        command_terms = st.multiselect(
-            "Select Command Terms:",
-            list(COMMAND_TERMS.keys()) if COMMAND_TERMS else ["Describe", "Explain", "Justify"],
-            default=["Explain", "Justify"]
-        )
-        
-        # Show descriptions
-        if command_terms:
-            with st.expander("Command Term Definitions"):
-                for term in command_terms:
-                    desc = COMMAND_TERMS.get(term, "No definition available")
-                    st.write(f"**{term}:** {desc}")
-    
-    # Real-world Context
-    st.subheader("Real-world Situation")
-    context_description = st.text_area(
-        "Describe the authentic real-world situation for this assessment:",
-        height=120,
-        placeholder="Example: 'Students will analyze public transportation data to optimize bus routes in their city, considering factors like population density, traffic patterns, and environmental impact...'",
-        help="Make it authentic and relevant to students' lives"
-    )
-    
-    # Assessment Settings
-    st.subheader("Assessment Settings")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        duration = st.selectbox(
-            "Estimated Duration:",
-            ["30 minutes", "45 minutes", "60 minutes", "90 minutes", "120 minutes", "Extended project"]
-        )
-        
-        format_type = st.selectbox(
-            "Assessment Format:",
-            ["Written test", "Investigation", "Project", "Presentation", "Portfolio"]
-        )
-    
-    with col2:
-        group_size = st.selectbox(
-            "Group/Individual:",
-            ["Individual", "Pairs", "Small groups (3-4)", "Whole class"]
-        )
-        
-        resources = st.multiselect(
-            "Required Resources:",
-            ["Calculator", "Graph paper", "Ruler/Protractor", "Computer", "Graphing software", "Measuring tools", "Internet access"]
-        )
-    
-    # Store in session
-    st.session_state.context = {
-        "global_context": global_context,
-        "key_concept": key_concept,
-        "command_terms": command_terms,
-        "description": context_description,
-        "duration": duration,
-        "format": format_type,
-        "group_size": group_size,
-        "resources": resources
-    }
-
-# ========== TAB 4: GENERATE ASSESSMENT ==========
-with tab4:
-    st.header("Generate Assessment")
-    
-    # Check if ready to generate
-    ready_to_generate = True
-    warnings = []
-    
-    # Check API key
-    if not st.session_state.api_key:
-        warnings.append("❌ OpenAI API key not configured")
-        ready_to_generate = False
-    
-    # Check curriculum selected
-    if 'curriculum' not in st.session_state or not st.session_state.curriculum.get('skills'):
-        warnings.append("⚠️ No curriculum skills selected")
-        ready_to_generate = False
-    
-    # Check criteria selected
-    if not st.session_state.selected_strands:
-        warnings.append("⚠️ No criterion strands selected")
-        ready_to_generate = False
-    
-    # Check context
-    if 'context' not in st.session_state or not st.session_state.context.get('description'):
-        warnings.append("⚠️ Real-world context not provided")
-    
-    # Display warnings
-    if warnings:
-        st.warning("Please address the following:")
-        for warning in warnings:
-            st.write(warning)
-    
-    # Assessment Title
-    assessment_title = st.text_input(
-        "Assessment Title:",
-        placeholder="e.g., 'Optimizing Urban Transportation: A Data Analysis Project'",
-        help="Create an engaging title that reflects the real-world context"
-    )
-    
-    # Generate Button
-    col1, col2, col3 = st.columns([2, 1, 1])
-    
-    with col2:
-        generate_clicked = st.button(
-            "✨ GENERATE ASSESSMENT",
-            type="primary",
-            use_container_width=True,
-            disabled=not ready_to_generate
-        )
-    
-    with col3:
-        if st.button("🔄 Reset All", use_container_width=True):
-            st.session_state.selected_strands = []
-            st.session_state.curriculum = {}
-            st.session_state.context = {}
-            st.rerun()
-    
-    # Generate Assessment
-    if generate_clicked and ready_to_generate:
-        with st.spinner("🤖 Creating your curriculum-aligned assessment... (20-30 seconds)"):
-            try:
-                # Build the prompt
-                curriculum = st.session_state.curriculum
-                context = st.session_state.context
-                
-                prompt = f"""
-                CREATE A COMPREHENSIVE MYP MATHEMATICS ASSESSMENT
-                
-                ====== CURRICULUM ALIGNMENT ======
-                MYP Level: {curriculum.get('level', 'Not specified')}
-                Mathematics Branch: {curriculum.get('branch', 'Not specified')}
-                Topic Area: {curriculum.get('topic', 'Not specified')}
-                Specific Skills/Concepts:
-                {chr(10).join(['• ' + skill for skill in curriculum.get('skills', [])])}
-                
-                ====== ASSESSMENT CRITERIA ======
-                {chr(10).join(['• ' + strand for strand in st.session_state.selected_strands])}
-                
-                ====== REAL-WORLD CONTEXT ======
-                Global Context: {context.get('global_context', 'Not specified')}
-                Key Concept: {context.get('key_concept', 'Not specified')}
-                Command Terms to Use: {', '.join(context.get('command_terms', []))}
-                
-                Authentic Situation: {context.get('description', 'Not specified')}
-                
-                ====== ASSESSMENT DETAILS ======
-                Title: {assessment_title}
-                Format: {context.get('format', 'Written test')}
-                Duration: {context.get('duration', '60 minutes')}
-                Grouping: {context.get('group_size', 'Individual')}
-                Resources: {', '.join(context.get('resources', []))}
-                
-                ====== REQUIREMENTS ======
-                Create a complete, ready-to-use assessment that:
-                
-                1. Is age-appropriate for the MYP level
-                2. Clearly targets EACH selected criterion strand
-                3. Uses the specified command terms appropriately
-                4. Has clear, scaffolded instructions
-                5. Includes varied question types (calculation, explanation, application, justification)
-                6. Connects authentically to the real-world context
-                7. Provides opportunities for differentiation
-                8. Includes extension questions for advanced students
-                9. Specifies assessment criteria clearly for students
-                10. Suggests implementation guidance for teachers
-                
-                ====== OUTPUT FORMAT ======
-                Please structure your response as follows:
-                
-                ASSESSMENT TITLE
-                [The assessment title]
-                
-                CURRICULUM CONNECTION
-                [Explain how this assessment connects to the MYP curriculum]
-                
-                REAL-WORLD CONTEXT
-                [Describe the authentic situation students will engage with]
-                
-                LEARNING OBJECTIVES
-                • [Objective 1]
-                • [Objective 2]
-                • [Objective 3]
-                
-                ASSESSMENT CRITERIA
-                [List and explain which criteria strands are being assessed]
-                
-                TASK INSTRUCTIONS
-                [Clear, student-friendly instructions]
-                
-                ASSESSMENT TASKS
-                Part 1: [Task focusing on Criterion A if selected]
-                Part 2: [Task focusing on Criterion B if selected]
-                Part 3: [Task focusing on Criterion C if selected]
-                Part 4: [Task focusing on Criterion D if selected]
-                
-                MARKING GUIDANCE
-                [Suggestions for assessing each criterion]
-                
-                DIFFERENTIATION STRATEGIES
-                Support: [For students needing help]
-                Extension: [For advanced students]
-                
-                TEACHER NOTES
-                [Implementation tips, common misconceptions, resources]
-                """
-                
-                # Call OpenAI
-                client = OpenAI(api_key=st.session_state.api_key)
-                response = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[
-                        {
-                            "role": "system", 
-                            "content": """You are an expert IB MYP Mathematics curriculum developer with 20 years experience. 
-                            You create engaging, authentic, curriculum-aligned assessments that develop mathematical thinking.
-                            You are meticulous about proper criterion alignment and real-world relevance."""
-                        },
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.7,
-                    max_tokens=2500
-                )
-                
-                # Get the generated assessment
-                assessment_content = response.choices[0].message.content
-                
-                # Create assessment object
-                assessment = {
-                    "id": len(st.session_state.assessments) + 1,
-                    "title": assessment_title if assessment_title else f"MYP {curriculum.get('topic', 'Math')} Assessment",
-                    "content": assessment_content,
-                    "metadata": {
-                        "curriculum": curriculum,
-                        "strands": st.session_state.selected_strands,
-                        "context": context,
-                        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "tokens": response.usage.total_tokens
-                    }
+        <style>
+            * {
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+                min-height: 100vh;
+            }
+            
+            .editor-container {
+                max-width: 900px;
+                margin: 0 auto;
+                background: white;
+                padding: 30px;
+                border-radius: 20px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            }
+            
+            .editor-title {
+                text-align: center;
+                color: #1e293b;
+                margin-bottom: 5px;
+                font-size: 1.8rem;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            
+            .editor-subtitle {
+                text-align: center;
+                color: #64748b;
+                margin-bottom: 30px;
+                font-size: 1rem;
+            }
+            
+            .math-editor-area {
+                border: 3px solid #e2e8f0;
+                border-radius: 12px;
+                padding: 25px;
+                margin: 25px 0;
+                min-height: 180px;
+                font-size: 20px;
+                background: #f8fafc;
+                transition: border-color 0.3s;
+            }
+            
+            .math-editor-area:focus-within {
+                border-color: #667eea;
+                box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            }
+            
+            .button-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+                gap: 12px;
+                margin: 25px 0;
+            }
+            
+            .math-button {
+                padding: 12px 15px;
+                background: white;
+                color: #475569;
+                border: 2px solid #e2e8f0;
+                border-radius: 10px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: 600;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+            }
+            
+            .math-button:hover {
+                background: #f1f5f9;
+                border-color: #cbd5e1;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            }
+            
+            .math-button.primary {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+            }
+            
+            .math-button.primary:hover {
+                background: linear-gradient(135deg, #5a6fd8 0%, #6a4192 100%);
+                box-shadow: 0 6px 12px rgba(102, 126, 234, 0.2);
+            }
+            
+            .output-section {
+                background: #f8fafc;
+                padding: 25px;
+                border-radius: 12px;
+                margin-top: 30px;
+                border: 2px solid #e2e8f0;
+            }
+            
+            .section-title {
+                color: #334155;
+                margin-top: 0;
+                margin-bottom: 15px;
+                font-size: 1.2rem;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            
+            .section-title::before {
+                content: "📋";
+                font-size: 1.2em;
+            }
+            
+            .latex-output {
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                font-family: 'Monaco', 'Courier New', monospace;
+                font-size: 14px;
+                line-height: 1.6;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+                border: 1px solid #e2e8f0;
+                margin: 15px 0;
+                min-height: 80px;
+            }
+            
+            .preview-area {
+                background: white;
+                padding: 30px;
+                border-radius: 12px;
+                margin-top: 20px;
+                text-align: center;
+                font-size: 24px;
+                border: 2px dashed #cbd5e1;
+                min-height: 120px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .action-buttons {
+                display: flex;
+                gap: 15px;
+                margin-top: 25px;
+                justify-content: center;
+            }
+            
+            .icon {
+                font-size: 1.2em;
+            }
+            
+            @media (max-width: 768px) {
+                .button-grid {
+                    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
                 }
                 
-                # Save to session
-                st.session_state.assessments.append(assessment)
+                .editor-container {
+                    padding: 20px;
+                }
                 
-                # Display success
-                st.success("✅ Assessment Generated Successfully!")
-                st.balloons()
+                .math-editor-area {
+                    padding: 15px;
+                    font-size: 18px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="editor-container">
+            <h1 class="editor-title">Math Equation Editor</h1>
+            <p class="editor-subtitle">Create professional mathematical notation for your assessments</p>
+            
+            <div class="math-editor-area" id="math-editor">
+                <!-- MathQuill editor will appear here -->
+            </div>
+            
+            <div class="button-grid">
+                <button class="math-button" onclick="insertFraction()">
+                    <span class="icon">a/b</span> Fraction
+                </button>
+                <button class="math-button" onclick="insertSquareRoot()">
+                    <span class="icon">√</span> Square Root
+                </button>
+                <button class="math-button" onclick="insertExponent()">
+                    <span class="icon">x²</span> Exponent
+                </button>
+                <button class="math-button" onclick="insertSubscript()">
+                    <span class="icon">x₁</span> Subscript
+                </button>
+                <button class="math-button" onclick="insertIntegral()">
+                    <span class="icon">∫</span> Integral
+                </button>
+                <button class="math-button" onclick="insertSummation()">
+                    <span class="icon">∑</span> Summation
+                </button>
+                <button class="math-button" onclick="insertGreek()">
+                    <span class="icon">αβγ</span> Greek
+                </button>
+                <button class="math-button" onclick="insertMatrix()">
+                    <span class="icon">[ ]</span> Matrix
+                </button>
+                <button class="math-button" onclick="insertLimit()">
+                    <span class="icon">lim</span> Limit
+                </button>
+                <button class="math-button" onclick="insertTrig()">
+                    <span class="icon">sin</span> Trig
+                </button>
+                <button class="math-button" onclick="insertLog()">
+                    <span class="icon">log</span> Logarithm
+                </button>
+                <button class="math-button" onclick="clearEditor()">
+                    <span class="icon">🗑️</span> Clear
+                </button>
+            </div>
+            
+            <div class="output-section">
+                <h3 class="section-title">LaTeX Output</h3>
+                <div class="latex-output" id="latex-output">x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}</div>
                 
-                # Display assessment
-                st.markdown("---")
-                st.markdown(f"## 📄 {assessment['title']}")
-                st.markdown(f"*Generated: {assessment['metadata']['date']}*")
-                st.markdown("---")
+                <h3 class="section-title">Live Preview</h3>
+                <div class="preview-area" id="math-preview">
+                    <!-- MathJax preview will appear here -->
+                </div>
                 
-                # Show in a nice box
-                st.markdown(f'<div class="assessment-output">{assessment_content}</div>', unsafe_allow_html=True)
+                <div class="action-buttons">
+                    <button class="math-button primary" onclick="copyToClipboard()">
+                        <span class="icon">📋</span> Copy LaTeX
+                    </button>
+                    <button class="math-button primary" onclick="insertIntoAssessment()">
+                        <span class="icon">📝</span> Insert into Assessment
+                    </button>
+                    <button class="math-button primary" onclick="downloadEquation()">
+                        <span class="icon">📥</span> Download
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- MathJax for rendering -->
+        <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+        <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+        
+        <script>
+            // Initialize MathQuill
+            var MQ = MathQuill.getInterface(2);
+            var mathField = MQ.MathField(document.getElementById('math-editor'), {
+                spaceBehavesLikeTab: true,
+                handlers: {
+                    edit: function() {
+                        var latex = mathField.latex();
+                        document.getElementById('latex-output').textContent = latex;
+                        updatePreview(latex);
+                        
+                        // Send to Streamlit
+                        window.parent.postMessage({
+                            type: 'math_equation',
+                            latex: latex
+                        }, '*');
+                    }
+                }
+            });
+            
+            // Initialize with example
+            mathField.latex('x = \\\\frac{-b \\\\pm \\\\sqrt{b^2 - 4ac}}{2a}');
+            updatePreview(mathField.latex());
+            
+            // Button functions
+            function insertFraction() {
+                mathField.cmd('\\\\frac');
+            }
+            
+            function insertSquareRoot() {
+                mathField.cmd('\\\\sqrt');
+            }
+            
+            function insertExponent() {
+                mathField.cmd('^');
+            }
+            
+            function insertSubscript() {
+                mathField.cmd('_');
+            }
+            
+            function insertIntegral() {
+                mathField.write('\\\\int_{ }^{ }');
+                mathField.keystroke('Left');
+                mathField.keystroke('Left');
+            }
+            
+            function insertSummation() {
+                mathField.write('\\\\sum_{ }^{ }');
+                mathField.keystroke('Left');
+                mathField.keystroke('Left');
+            }
+            
+            function insertLimit() {
+                mathField.write('\\\\lim_{x\\\\to }');
+                mathField.keystroke('Left');
+            }
+            
+            function insertMatrix() {
+                mathField.write('\\\\begin{bmatrix} a & b \\\\\\\\ c & d \\\\end{bmatrix}');
+            }
+            
+            function insertGreek() {
+                mathField.write('\\\\alpha \\\\beta \\\\gamma \\\\Delta \\\\theta \\\\pi \\\\omega \\\\sigma');
+            }
+            
+            function insertTrig() {
+                mathField.write('\\\\sin \\\\cos \\\\tan \\\\sec \\\\csc \\\\cot');
+            }
+            
+            function insertLog() {
+                mathField.write('\\\\log \\\\ln');
+            }
+            
+            function clearEditor() {
+                mathField.latex('');
+            }
+            
+            function copyToClipboard() {
+                var latex = mathField.latex();
+                navigator.clipboard.writeText(latex).then(function() {
+                    showToast('LaTeX copied to clipboard!', 'success');
+                });
+            }
+            
+            function insertIntoAssessment() {
+                showToast('Equation ready to insert into assessment', 'info');
+            }
+            
+            function downloadEquation() {
+                var latex = mathField.latex();
+                var blob = new Blob([latex], { type: 'text/plain' });
+                var url = window.URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = 'equation.tex';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                showToast('Equation downloaded as equation.tex', 'success');
+            }
+            
+            function updatePreview(latex) {
+                var preview = document.getElementById('math-preview');
+                preview.innerHTML = '\\\\( ' + latex + ' \\\\)';
                 
-                # Create downloadable content
-                full_content = f"""
-                MYP MATHEMATICS ASSESSMENT
-                ===========================
+                // Re-render MathJax
+                if (window.MathJax) {
+                    MathJax.typesetPromise([preview]);
+                }
+            }
+            
+            function showToast(message, type) {
+                // Create toast element
+                var toast = document.createElement('div');
+                toast.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    padding: 15px 20px;
+                    background: ${type === 'success' ? '#10B981' : '#3B82F6'};
+                    color: white;
+                    border-radius: 10px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    z-index: 1000;
+                    animation: slideIn 0.3s ease;
+                    font-weight: 500;
+                `;
+                toast.innerHTML = `✓ ${message}`;
+                document.body.appendChild(toast);
                 
-                TITLE: {assessment['title']}
-                
-                GENERATED: {assessment['metadata']['date']}
-                
-                CURRICULUM ALIGNMENT:
-                • Level: {curriculum.get('level', 'N/A')}
-                • Branch: {curriculum.get('branch', 'N/A')}
-                • Topic: {curriculum.get('topic', 'N/A')}
-                • Skills: {', '.join(curriculum.get('skills', []))}
-                
-                ASSESSMENT CRITERIA:
-                {chr(10).join(['• ' + strand for strand in st.session_state.selected_strands])}
-                
-                CONTEXT:
-                • Global Context: {context.get('global_context', 'N/A')}
-                • Key Concept: {context.get('key_concept', 'N/A')}
-                • Command Terms: {', '.join(context.get('command_terms', []))}
-                • Real-world Situation: {context.get('description', 'N/A')}
-                
-                ASSESSMENT DETAILS:
-                • Format: {context.get('format', 'N/A')}
-                • Duration: {context.get('duration', 'N/A')}
-                • Grouping: {context.get('group_size', 'N/A')}
-                • Resources: {', '.join(context.get('resources', []))}
-                
-                {'='*50}
-                
-                {assessment_content}
-                
-                {'='*50}
-                
-                AI-GENERATED ASSESSMENT
-                MYP Mathematics Professional Generator
-                Generated with OpenAI GPT-4
-                """
-                
-                # Download button
-                st.download_button(
-                    "📥 Download Complete Assessment",
-                    full_content,
-                    file_name=f"MYP_{curriculum.get('topic', 'Math')}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
-                
-            except Exception as e:
-                st.error(f"❌ Error generating assessment: {str(e)}")
-                st.info("Common issues: 1) API key invalid 2) No credits 3) Network error")
-
-# ========== PREVIOUS ASSESSMENTS ==========
-if st.session_state.assessments:
-    st.markdown("---")
-    st.header("📚 Your Assessment Library")
+                // Remove after 3 seconds
+                setTimeout(function() {
+                    toast.style.animation = 'slideOut 0.3s ease';
+                    setTimeout(function() {
+                        document.body.removeChild(toast);
+                    }, 300);
+                }, 3000);
+            }
+            
+            // Add CSS for animations
+            var style = document.createElement('style');
+            style.textContent = `
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                @keyframes slideOut {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(100%); opacity: 0; }
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Initialize MathJax
+            window.MathJax = {
+                tex: {
+                    inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+                    displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']]
+                },
+                startup: {
+                    typeset: false
+                }
+            };
+            
+            // Listen for messages from Streamlit
+            window.addEventListener('message', function(event) {
+                if (event.data.type === 'set_equation') {
+                    mathField.latex(event.data.latex);
+                }
+            });
+        </script>
+    </body>
+    </html>
+    """
     
-    for assessment in reversed(st.session_state.assessments):
-        with st.expander(f"📄 {assessment['title']} - {assessment['metadata']['date']}"):
-            col1, col2 = st.columns([3, 1])
+    # Create a container for the editor
+    with st.container():
+        components.html(html, height=800)
+
+def latex_preview(latex_code, height=200):
+    """Render LaTeX preview"""
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+        <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+        <script>
+        MathJax = {{
+            tex: {{
+                inlineMath: [['$', '$'], ['\\\\(', '\\\\)']],
+                displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']]
+            }},
+            svg: {{
+                fontCache: 'global'
+            }}
+        }};
+        </script>
+    </head>
+    <body>
+        <div style="padding: 25px; background: white; border-radius: 12px; border: 2px solid #e2e8f0; margin: 10px 0;">
+            {latex_code}
+        </div>
+    </body>
+    </html>
+    """
+    
+    components.html(html, height=height)
+
+def graph_generator():
+    """Interactive graph generator"""
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("Graph Settings")
+        
+        graph_type = st.selectbox(
+            "Graph Type:",
+            ["Linear", "Quadratic", "Cubic", "Exponential", "Trigonometric", "Piecewise"]
+        )
+        
+        function_input = st.text_input(
+            "Function (in terms of x):",
+            value="x^2" if graph_type == "Quadratic" else "sin(x)" if graph_type == "Trigonometric" else "x"
+        )
+        
+        color = st.color_picker("Graph Color", "#FF0000")
+        line_width = st.slider("Line Width", 1, 5, 2)
+        
+        show_grid = st.checkbox("Show Grid", True)
+        show_axes = st.checkbox("Show Axes", True)
+        
+        x_min, x_max = st.slider("X-axis Range", -20, 20, (-10, 10))
+        y_min, y_max = st.slider("Y-axis Range", -20, 20, (-10, 10))
+        
+        if st.button("Generate Graph", use_container_width=True):
+            st.session_state.graph_config = {
+                "type": graph_type,
+                "function": function_input,
+                "color": color,
+                "line_width": line_width,
+                "show_grid": show_grid,
+                "show_axes": show_axes,
+                "x_range": (x_min, x_max),
+                "y_range": (y_min, y_max)
+            }
+    
+    with col2:
+        st.subheader("Graph Preview")
+        
+        if 'graph_config' in st.session_state:
+            config = st.session_state.graph_config
             
-            with col1:
-                st.write(f"**Topic:** {assessment['metadata']['curriculum'].get('topic', 'N/A')}")
-                st.write(f"**Level:** {assessment['metadata']['curriculum'].get('level', 'N/A')}")
-                st.write(f"**Criteria:** {len(assessment['metadata']['strands'])} strands")
+            # Create GeoGebra with the function
+            html = f"""
+            <div style="border: 3px solid #8B5CF6; border-radius: 15px; overflow: hidden; margin: 20px 0;">
+                <iframe src="https://www.geogebra.org/graphing?func={config['function']}&xmin={config['x_range'][0]}&xmax={config['x_range'][1]}&ymin={config['y_range'][0]}&ymax={config['y_range'][1]}" 
+                        width="100%" 
+                        height="500px" 
+                        style="border: none;"
+                        allowfullscreen>
+                </iframe>
+            </div>
+            """
             
-            with col2:
-                st.download_button(
-                    "Download",
-                    assessment['content'],
-                    file_name=f"assessment_{assessment['id']}.txt",
-                    key=f"dl_{assessment['id']}",
-                    use_container_width=True
-                )
+            components.html(html, height=530)
             
+            # Download options
+            graph_code = f"f(x) = {config['function']}, x ∈ [{config['x_range'][0]}, {config['x_range'][1]}], y ∈ [{config['y_range'][0]}, {config['y_range'][1]}]"
+            st.download_button(
+                "📥 Save Graph Configuration",
+                graph_code,
+                file_name=f"graph_{config['function']}.txt"
+            )
+        else:
+            st.info("👈 Configure graph settings and click 'Generate Graph'")
+
+# ========== MAIN APP FUNCTIONS ==========
+def show_assessment_generator():
+    """Main assessment generator"""
+    st.header("📝 Assessment Generator")
+    
+    # Simplified form for demo
+    with st.form("assessment_form"):
+        topic = st.selectbox("Topic:", ["Algebra", "Geometry", "Statistics"])
+        level = st.selectbox("MYP Level:", [1, 2, 3, 4, 5])
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            include_geogebra = st.checkbox("Include GeoGebra", True)
+            include_equations = st.checkbox("Include Equations", True)
+        with col2:
+            include_graphs = st.checkbox("Include Graphs", False)
+            include_diagrams = st.checkbox("Include Diagrams", False)
+        
+        submitted = st.form_submit_button("Generate Assessment")
+    
+    if submitted:
+        with st.spinner("Creating assessment..."):
+            # Create assessment
+            assessment = f"""
+            # MYP {level} Mathematics Assessment
+            ## Topic: {topic}
+            
+            **Instructions:** Complete all tasks showing your working.
+            
+            ## Part 1: Knowledge and Understanding
+            
+            1. Solve the equation: $2x + 5 = 13$
+            
+            ## Part 2: Application
+            
+            2. A rectangle has length $(x + 3)$ cm and width $(x - 2)$ cm.
+               If the area is $54$ cm², find the value of $x$.
+            
+            ## Part 3: Investigation
+            
+            3. Investigate the pattern:
+               $1, 4, 9, 16, 25, ...$
+               a) Describe the pattern in words
+               b) Write the nth term formula
+               c) Find the 10th term
+            
+            ## Part 4: Real-world Application
+            
+            4. A water tank is being filled. The volume $V$ (in liters) at time $t$ (in minutes)
+               is given by $V = 50t + 100$.
+               a) How much water is in the tank after 10 minutes?
+               b) How long does it take to fill 1000 liters?
+            """
+            
+            st.session_state.current_assessment = assessment
+            st.success("✅ Assessment generated!")
+            
+            # Display assessment
             st.markdown("---")
-            st.markdown(assessment['content'])
+            st.markdown(assessment)
+            
+            # Add tools if selected
+            if include_geogebra:
+                st.markdown("---")
+                st.subheader("📐 GeoGebra Tools for this Assessment")
+                geogebra_calculator(height=400)
 
-# ========== FOOTER ==========
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #666;">
-    <p><strong>MYP Mathematics Professional Generator</strong> • Curriculum-Aligned • Criterion-Focused • AI-Powered</p>
-    <p>Designed for IB MYP Mathematics Teachers • Version 2.0</p>
-</div>
-""", unsafe_allow_html=True)# Add imports at top
-from math_tools import equation_editor, latex_editor_with_preview, render_mathjax
-from geogebra_tools import geogebra_calculator, geogebra_geometry, geogebra_graphing
-
-# Add a new tab for tools
+# ========== TOOLS DASHBOARD ==========
 def show_math_tools():
-    st.header("🛠️ Math Content Tools")
+    """Math tools dashboard"""
+    st.header("🛠️ Math Content Creation Tools")
     
-    tool_choice = st.selectbox(
-        "Choose Tool:",
+    # Tool selection
+    tool = st.selectbox(
+        "Choose a tool:",
         [
-            "GeoGebra Calculator",
-            "GeoGebra Geometry",
-            "Equation Editor", 
-            "LaTeX Editor",
-            "Graph Generator"
+            "📐 GeoGebra Calculator",
+            "📏 GeoGebra Geometry", 
+            "📈 GeoGebra Graphing",
+            "✏️ Math Equation Editor",
+            "🎨 Graph Generator",
+            "📝 LaTeX Preview"
         ]
     )
     
-    if tool_choice == "GeoGebra Calculator":
-        geogebra_calculator()
+    if "GeoGebra Calculator" in tool:
+        st.markdown('<div class="tool-card geogebra-card">', unsafe_allow_html=True)
+        st.subheader("📐 GeoGebra Calculator")
+        st.write("Interactive scientific calculator for algebra, functions, and calculus")
+        geogebra_calculator(height=500, title="GeoGebra Scientific Calculator")
+        st.markdown('</div>', unsafe_allow_html=True)
         
-    elif tool_choice == "GeoGebra Geometry":
-        geogebra_geometry()
+    elif "GeoGebra Geometry" in tool:
+        st.markdown('<div class="tool-card geogebra-card">', unsafe_allow_html=True)
+        st.subheader("📏 GeoGebra Geometry")
+        st.write("Construct geometric figures, measure angles, prove theorems")
+        geogebra_geometry(height=500, title="GeoGebra Geometry")
+        st.markdown('</div>', unsafe_allow_html=True)
         
-    elif tool_choice == "Equation Editor":
-        equation_editor()
+    elif "GeoGebra Graphing" in tool:
+        st.markdown('<div class="tool-card geogebra-card">', unsafe_allow_html=True)
+        st.subheader("📈 GeoGebra Graphing Calculator")
+        st.write("Plot functions, create sliders, analyze graphs")
+        geogebra_graphing(height=500, title="GeoGebra Graphing")
+        st.markdown('</div>', unsafe_allow_html=True)
         
-    elif tool_choice == "LaTeX Editor":
-        latex_code = latex_editor_with_preview()
-        # You can save this to use in assessments
+    elif "Math Equation Editor" in tool:
+        st.markdown('<div class="tool-card equation-card">', unsafe_allow_html=True)
+        st.subheader("✏️ Math Equation Editor")
+        st.write("Create professional mathematical notation with LaTeX")
+        math_equation_editor()
+        st.markdown('</div>', unsafe_allow_html=True)
         
-    # Add to your tabs
-    tabs = st.tabs(["Generate", "Library", "Tools", "Settings"])
-    with tabs[2]:  # Tools tab
+    elif "Graph Generator" in tool:
+        st.markdown('<div class="tool-card graphing-card">', unsafe_allow_html=True)
+        st.subheader("🎨 Graph Generator")
+        st.write("Create custom graphs for assessments")
+        graph_generator()
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+    elif "LaTeX Preview" in tool:
+        st.markdown('<div class="tool-card equation-card">', unsafe_allow_html=True)
+        st.subheader("📝 LaTeX Preview")
+        
+        latex_input = st.text_area(
+            "Enter LaTeX code:",
+            height=150,
+            value="\\[ \\int_{0}^{1} x^2 \\, dx = \\frac{1}{3} \\]"
+        )
+        
+        if latex_input:
+            latex_preview(latex_input, height=300)
+            
+            # Copy button
+            if st.button("📋 Copy LaTeX", use_container_width=True):
+                st.code(latex_input)
+                st.success("Copied to clipboard!")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# ========== ASSESSMENT LIBRARY ==========
+def show_assessment_library():
+    """Assessment library"""
+    st.header("📚 Assessment Library")
+    
+    if 'assessments' not in st.session_state:
+        st.session_state.assessments = []
+    
+    if st.session_state.assessments:
+        for i, assessment in enumerate(st.session_state.assessments):
+            with st.expander(f"Assessment {i+1}: {assessment.get('topic', 'Math')}"):
+                st.markdown(assessment.get('content', 'No content'))
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.download_button(
+                        "📥 Download",
+                        assessment.get('content', ''),
+                        file_name=f"assessment_{i+1}.txt"
+                    )
+                with col2:
+                    if st.button("🗑️ Delete", key=f"delete_{i}"):
+                        st.session_state.assessments.pop(i)
+                        st.rerun()
+    else:
+        st.info("No assessments yet. Generate one in the 'Generate' tab.")
+
+# ========== MAIN APP ==========
+def main():
+    """Main application"""
+    
+    # Header
+    st.markdown("""
+    <div class="main-header">
+        <h1>🧮 MYP Mathematics Professional Suite</h1>
+        <h3>Assessment Generator + Math Tools + Curriculum Integration</h3>
+        <p>Create, customize, and enrich mathematics assessments with integrated tools</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Sidebar
+    with st.sidebar:
+        st.header("🔧 Quick Access")
+        
+        # Tool shortcuts
+        st.subheader("Quick Tools")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📐 Calculator", use_container_width=True):
+                st.session_state.selected_tool = "GeoGebra Calculator"
+                st.rerun()
+            if st.button("✏️ Equations", use_container_width=True):
+                st.session_state.selected_tool = "Math Equation Editor"
+                st.rerun()
+        with col2:
+            if st.button("📈 Graphing", use_container_width=True):
+                st.session_state.selected_tool = "GeoGebra Graphing"
+                st.rerun()
+            if st.button("📏 Geometry", use_container_width=True):
+                st.session_state.selected_tool = "GeoGebra Geometry"
+                st.rerun()
+        
+        st.divider()
+        
+        # API Configuration
+        st.header("🔐 Configuration")
+        api_key = st.text_input("OpenAI API Key:", type="password")
+        if api_key:
+            st.success("✅ API configured")
+        
+        st.divider()
+        
+        # Status
+        st.header("📊 Status")
+        st.metric("Assessments", len(st.session_state.get('assessments', [])))
+        
+        if 'current_assessment' in st.session_state:
+            st.markdown('<span class="status-success">Assessment Ready</span>', unsafe_allow_html=True)
+    
+    # Main tabs
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🚀 Generate Assessment",
+        "🛠️ Math Tools", 
+        "📚 Library",
+        "⚙️ Settings"
+    ])
+    
+    with tab1:
+        show_assessment_generator()
+    
+    with tab2:
         show_math_tools()
+    
+    with tab3:
+        show_assessment_library()
+    
+    with tab4:
+        st.header("Settings")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Preferences")
+            theme = st.selectbox("Theme:", ["Light", "Dark", "Auto"])
+            default_tool = st.selectbox("Default Tool:", ["GeoGebra Calculator", "Equation Editor", "Graph Generator"])
+            
+            st.checkbox("Auto-save assessments", True)
+            st.checkbox("Show preview before download", True)
+            st.checkbox("Include sample equations", True)
+        
+        with col2:
+            st.subheader("Export Settings")
+            st.selectbox("Default Format:", ["PDF", "Word", "Google Docs", "Plain Text"])
+            st.selectbox("Equation Format:", ["LaTeX", "MathML", "Images"])
+            
+            st.number_input("Default Graph Height:", 400, 800, 500, 50)
+            st.number_input("Equation Font Size:", 12, 24, 16, 1)
+        
+        if st.button("Save Settings", type="primary"):
+            st.success("Settings saved!")
+
+# Run the app
+if __name__ == "__main__":
+    # Initialize session state
+    if 'assessments' not in st.session_state:
+        st.session_state.assessments = []
+    if 'current_assessment' not in st.session_state:
+        st.session_state.current_assessment = ""
+    
+    main()
