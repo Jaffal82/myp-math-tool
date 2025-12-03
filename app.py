@@ -683,4 +683,39 @@ st.markdown("""
     <p><strong>MYP Mathematics Professional Generator</strong> • Curriculum-Aligned • Criterion-Focused • AI-Powered</p>
     <p>Designed for IB MYP Mathematics Teachers • Version 2.0</p>
 </div>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True)# Add imports at top
+from math_tools import equation_editor, latex_editor_with_preview, render_mathjax
+from geogebra_tools import geogebra_calculator, geogebra_geometry, geogebra_graphing
+
+# Add a new tab for tools
+def show_math_tools():
+    st.header("🛠️ Math Content Tools")
+    
+    tool_choice = st.selectbox(
+        "Choose Tool:",
+        [
+            "GeoGebra Calculator",
+            "GeoGebra Geometry",
+            "Equation Editor", 
+            "LaTeX Editor",
+            "Graph Generator"
+        ]
+    )
+    
+    if tool_choice == "GeoGebra Calculator":
+        geogebra_calculator()
+        
+    elif tool_choice == "GeoGebra Geometry":
+        geogebra_geometry()
+        
+    elif tool_choice == "Equation Editor":
+        equation_editor()
+        
+    elif tool_choice == "LaTeX Editor":
+        latex_code = latex_editor_with_preview()
+        # You can save this to use in assessments
+        
+    # Add to your tabs
+    tabs = st.tabs(["Generate", "Library", "Tools", "Settings"])
+    with tabs[2]:  # Tools tab
+        show_math_tools()
